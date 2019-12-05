@@ -169,7 +169,8 @@ class DLRM_Net(nn.Module):
         qr_flag=False,
         qr_operation="mult",
         qr_collisions=0,
-        qr_threshold=200
+        qr_threshold=200,
+        debug_mode=False,
     ):
         super(DLRM_Net, self).__init__()
 
@@ -182,6 +183,7 @@ class DLRM_Net(nn.Module):
         ):
 
             # save arguments
+            self.debug_mode = debug_mode
             self.ndevices = ndevices
             self.output_d = 0
             self.parallel_model_batch_size = -1
@@ -278,17 +280,31 @@ class DLRM_Net(nn.Module):
         # process dense features (using bottom mlp), resulting in a row vector
         x = self.apply_mlp(dense_x, self.bot_l)
         # debug prints
-        # print("intermediate")
-        # print(x.detach().cpu().numpy())
+
+        if self.debug_mode:
+            print("intermediates")
+            print("=============")
+
+        if self.debug_mode:
+            print("Bottom MLP: ")
+            x.register_hook(print)
+            print(x.detach().cpu().numpy())
 
         # process sparse features(using embeddings), resulting in a list of row vectors
         ly = self.apply_emb(lS_o, lS_i, self.emb_l)
-        # for y in ly:
-        #     print(y.detach().cpu().numpy())
+
+        if self.debug_mode:
+            for y in ly:
+                y.register_hook(print)
+                print(y.detach().cpu().numpy())
 
         # interact features (dense and sparse)
         z = self.interact_features(x, ly)
-        # print(z.detach().cpu().numpy())
+
+        if self.debug_mode:
+            print("Interaction Result: ")
+            print(z.detach().cpu().numpy())
+            z.register_hook(print)
 
         # obtain probability of a click (using top mlp)
         p = self.apply_mlp(z, self.top_l)
@@ -298,6 +314,11 @@ class DLRM_Net(nn.Module):
             z = torch.clamp(p, min=self.loss_threshold, max=(1.0 - self.loss_threshold))
         else:
             z = p
+
+        if self.debug_mode:
+            z.register_hook(print)
+            print("Output:")
+            print(z.detach().cpu().numpy())
 
         return z
 
@@ -633,6 +654,8 @@ if __name__ == "__main__":
 
             print("mini-batch: %d" % j)
             print(X.detach().cpu().numpy())
+            print([S_o.detach().cpu().tolist() for S_o in lS_o])
+
             # transform offsets to lengths when printing
             print(
                 [
@@ -666,7 +689,8 @@ if __name__ == "__main__":
         qr_flag=args.qr_flag,
         qr_operation=args.qr_operation,
         qr_collisions=args.qr_collisions,
-        qr_threshold=args.qr_threshold
+        qr_threshold=args.qr_threshold,
+        debug_mode=args.debug_mode,
     )
     # test prints
     if args.debug_mode:
