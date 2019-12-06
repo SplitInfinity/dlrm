@@ -62,8 +62,14 @@ import time
 # data generation
 import dlrm_data_pytorch as dp
 
+# Glow replay creator
+import dlrm_glow_replay_creator as replay
+
 # numpy
 import numpy as np
+
+# os
+import os
 
 # onnx
 import onnx
@@ -499,7 +505,12 @@ if __name__ == "__main__":
 
     parser.add_argument("--save-model", type=str, default="")
     parser.add_argument("--load-model", type=str, default="")
+    parser.add_argument("--save-glow-replay", type=str, default="")
+
     args = parser.parse_args()
+
+    if args.save_glow_replay:
+        replay_creator = replay.GlowReplayCreator(args)
 
     ### some basic setup ###
     np.random.seed(args.numpy_rand_seed)
@@ -697,7 +708,9 @@ if __name__ == "__main__":
         print("initial parameters (weights and bias):")
         for param in dlrm.parameters():
             print(param.detach().cpu().numpy())
-        # print(dlrm)
+
+    if args.save_glow_replay:
+        replay_creator.add_initial_state(dlrm)
 
     if use_gpu:
         # Custom Model-Data Parallel
@@ -821,6 +834,7 @@ if __name__ == "__main__":
                 print(Z.detach().cpu().numpy())
                 print(E.detach().cpu().numpy())
                 '''
+
                 # compute loss and accuracy
                 L = E.detach().cpu().numpy()  # numpy array
                 S = Z.detach().cpu().numpy()  # numpy array
@@ -841,6 +855,17 @@ if __name__ == "__main__":
 
                     # optimizer
                     optimizer.step()
+
+                if args.save_glow_replay:
+                    replay_creator.add_minibatch_data_and_model_state(
+                        dense=X,
+                        offsets=lS_o,
+                        indices=lS_i,
+                        outputs=S,
+                        loss=L,
+                        acc=A,
+                        dlrm=dlrm,
+                    )
 
                 t2 = time_wrap(use_gpu)
                 total_time += t2 - t1
@@ -956,6 +981,10 @@ if __name__ == "__main__":
 
 
             k += 1  # nepochs
+
+    if args.save_glow_replay:
+        print("Saving glow replay")
+        replay_creator.save()
 
     # profiling
     if args.enable_profiling:
