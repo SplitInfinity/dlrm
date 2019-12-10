@@ -300,6 +300,7 @@ class DLRM_Net(nn.Module):
         ly = self.apply_emb(lS_o, lS_i, self.emb_l)
 
         if self.debug_mode:
+            print("Embeddings: ")
             for y in ly:
                 y.register_hook(print)
                 print(y.detach().cpu().numpy())
@@ -861,6 +862,7 @@ if __name__ == "__main__":
                         dense=X,
                         offsets=lS_o,
                         indices=lS_i,
+                        targets=T,
                         outputs=S,
                         loss=L,
                         acc=A,

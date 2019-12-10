@@ -31,6 +31,7 @@ class MinibatchInput(typing.NamedTuple):
     dense: typing.List[float]
     offsets: typing.List[typing.List[int]]
     indices: typing.List[typing.List[int]]
+    targets: typing.List[float]
 
 class MinibatchOutput(typing.NamedTuple):
     output: typing.List[float]
@@ -166,6 +167,7 @@ class GlowReplayCreator(object):
         dense,
         offsets,
         indices,
+        targets,
         outputs,
         loss,
         acc,
@@ -183,12 +185,14 @@ class GlowReplayCreator(object):
             proc_indices.append(self.pull_and_flatten(ind))
 
         proc_outputs = self.flatten(outputs)
-        proc_loss = self.flatten(loss)
+        proc_loss = self.flatten(loss)[0]
+        proc_targets = self.flatten(targets)
 
         mb_input = MinibatchInput(
             dense=proc_dense,
             offsets=proc_offsets,
             indices=proc_indices,
+            targets=proc_targets,
         )
 
         mb_output = MinibatchOutput(
@@ -224,7 +228,7 @@ class GlowReplayCreator(object):
             bottom_weight=self.bot_weight_init,
             bottom_bias=self.bot_bias_init,
             top_weight=self.top_weight_init,
-            top_bias=self.top_weight_init,
+            top_bias=self.top_bias_init,
         )
 
         save_dict["init"] = init._asdict()
