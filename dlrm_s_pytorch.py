@@ -88,6 +88,7 @@ from quorem.qr_embedding_bag import QREmbeddingBag
 
 exc = getattr(builtins, "IOError", "FileNotFoundError")
 
+replay_creator = None
 
 ### define dlrm in PyTorch ###
 class DLRM_Net(nn.Module):
@@ -127,9 +128,9 @@ class DLRM_Net(nn.Module):
                 layers.append(nn.ReLU())
 
         # approach 1: use ModuleList
-        # return layers
+        return layers
         # approach 2: use Sequential container to wrap all layers
-        return torch.nn.Sequential(*layers)
+        # return torch.nn.Sequential(*layers)
 
     def create_emb(self, m, ln):
         emb_l = nn.ModuleList()
@@ -150,6 +151,7 @@ class DLRM_Net(nn.Module):
                 ).astype(np.float32)
                 # approach 1
                 EE.weight.data = torch.tensor(W, requires_grad=True)
+                # EE.weight.register_hook(print)
                 # approach 2
                 # EE.weight.data.copy_(torch.tensor(W))
                 # approach 3
@@ -210,13 +212,21 @@ class DLRM_Net(nn.Module):
             self.bot_l = self.create_mlp(ln_bot, sigmoid_bot)
             self.top_l = self.create_mlp(ln_top, sigmoid_top)
 
-    def apply_mlp(self, x, layers):
+    def apply_mlp(self, x, layers, prefix):
         # approach 1: use ModuleList
-        # for layer in layers:
-        #     x = layer(x)
-        # return x
+        i = 0
+        for layer in layers:
+            # print (f"Input to layer {i} of {prefix}")
+            # print(x.detach().cpu().numpy())
+            # x.register_hook(lambda x: print(f"InputG of layer {i} of {prefix}: {x}"))
+            x = layer(x)
+            # x.register_hook(lambda x: print(f"OutputG of layer {i} of {prefix}: {x}"))
+            # print (f"Output of layer {i} of {prefix}")
+            # print(x.detach().cpu().numpy())
+            i += 1
+        return x
         # approach 2: use Sequential container to wrap all layers
-        return layers(x)
+        # return layers(x)
 
     def apply_emb(self, lS_o, lS_i, emb_l):
         # WARNING: notice that we are processing the batch at once. We implicitly
@@ -247,8 +257,18 @@ class DLRM_Net(nn.Module):
             # concatenate dense and sparse features
             (batch_size, d) = x.shape
             T = torch.cat([x] + ly, dim=1).view((batch_size, -1, d))
+            # print(f"interact input: {T}")
+            # T.register_hook(lambda x: print(f"interact input grad: {x}"))
             # perform a dot product
-            Z = torch.bmm(T, torch.transpose(T, 1, 2))
+            TT = torch.transpose(T, 1, 2)
+            # print(f"interact input T: {TT}")
+            # TT.register_hook(lambda x: print(f"interact input grad T: {x}"))
+
+            Z = torch.bmm(T, TT)
+
+            # print(f"Interact output: {Z}")
+            # Z.register_hook(lambda x: print(f"interact output grad: {x}"))
+
             # append dense feature with the interactions (into a row vector)
             # approach 1: all
             # Zflat = Z.view((batch_size, -1))
@@ -256,11 +276,13 @@ class DLRM_Net(nn.Module):
             _, ni, nj = Z.shape
             # approach 1: tril_indices
             # offset = 0 if self.arch_interaction_itself else -1
-            # li, lj = torch.tril_indices(ni, nj, offset=offset)
+            # li, lj = torch.tril_indicesni, nj, offset=offset)
             # approach 2: custom
             offset = 1 if self.arch_interaction_itself else 0
             li = torch.tensor([i for i in range(ni) for j in range(i + offset)])
             lj = torch.tensor([j for i in range(nj) for j in range(i + offset)])
+            # print(f"li: {li}")
+            # print(f"lj: {lj}")
             Zflat = Z[:, li, lj]
             # concatenate dense features and interactions
             R = torch.cat([x] + [Zflat], dim=1)
@@ -284,7 +306,7 @@ class DLRM_Net(nn.Module):
 
     def sequential_forward(self, dense_x, lS_o, lS_i):
         # process dense features (using bottom mlp), resulting in a row vector
-        x = self.apply_mlp(dense_x, self.bot_l)
+        x = self.apply_mlp(dense_x, self.bot_l, "bottom")
         # debug prints
 
         if self.debug_mode:
@@ -293,7 +315,7 @@ class DLRM_Net(nn.Module):
 
         if self.debug_mode:
             print("Bottom MLP: ")
-            x.register_hook(print)
+            # x.register_hook(print)
             print(x.detach().cpu().numpy())
 
         # process sparse features(using embeddings), resulting in a list of row vectors
@@ -302,7 +324,7 @@ class DLRM_Net(nn.Module):
         if self.debug_mode:
             print("Embeddings: ")
             for y in ly:
-                y.register_hook(print)
+                # y.register_hook(print)
                 print(y.detach().cpu().numpy())
 
         # interact features (dense and sparse)
@@ -314,7 +336,7 @@ class DLRM_Net(nn.Module):
             z.register_hook(print)
 
         # obtain probability of a click (using top mlp)
-        p = self.apply_mlp(z, self.top_l)
+        p = self.apply_mlp(z, self.top_l, "top")
 
         # clamp output if needed
         if 0.0 < self.loss_threshold and self.loss_threshold < 1.0:
@@ -323,7 +345,7 @@ class DLRM_Net(nn.Module):
             z = p
 
         if self.debug_mode:
-            z.register_hook(print)
+            # z.register_hook(lambda x: print(f"OutputG: {x}"))
             print("Output:")
             print(z.detach().cpu().numpy())
 

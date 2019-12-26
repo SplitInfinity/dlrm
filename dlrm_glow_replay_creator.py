@@ -78,12 +78,15 @@ class GlowReplayCreator(object):
     def pull(self, t):
         return t.detach().cpu().numpy()
 
-    def flatten(self, t):
+    def flatten(self, t, transpose=False):
+        if transpose:
+            t = t.transpose()
+
         return t.reshape((t.size)).tolist()
 
-    def pull_and_flatten(self, t):
+    def pull_and_flatten(self, t, transpose=False):
         pull_t = self.pull(t)
-        flatten_t = self.flatten(pull_t)
+        flatten_t = self.flatten(pull_t, transpose)
         return flatten_t
 
     def get_emb_weights(self, emb_l):
@@ -102,7 +105,7 @@ class GlowReplayCreator(object):
 
         for layer in mlp:
             for param in layer.parameters():
-                proc_param = self.pull_and_flatten(param)
+                proc_param = self.pull_and_flatten(param, transpose=True)
 
                 if len(param.shape) == 2:
                     weights.append(proc_param)
